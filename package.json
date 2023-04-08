@@ -2,10 +2,12 @@
   "name": "rename-symbol",
   "scripts": {
     "start": "node src/main.js",
-    "dev": "nodemon -e js --watch src --exec \"yarn run start\"",
+    "set_up_test_dir": "rm -r testdir && cp -r testdir_template testdir",
+    "dev": "nodemon -e js --watch src --exec \"yarn run set_up_test_dir && yarn run start\"",
     "lint": "eslint src/**/*.js"
   },
   "version": "1.0.0",
+  "type": "module",
   "description": "Fuzzy find and replace a symbol across a project!",
   "main": "index.js",
   "author": "Liz",
@@ -13,5 +15,6 @@
   "devDependencies": {
     "eslint": "^8.38.0",
     "nodemon": "^2.0.22"
-  }
+  },
+  "dependencies": {}
 }
