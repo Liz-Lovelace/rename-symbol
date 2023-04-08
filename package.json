@@ -1,9 +1,9 @@
 {
   "name": "rename-symbol",
   "scripts": {
-    "start": "node src/main.js",
-    "set_up_test_dir": "rm -r testdir && cp -r testdir_template testdir",
-    "dev": "nodemon -e js --watch src --exec \"yarn run set_up_test_dir && yarn run start\"",
+    "start": "yarn run set_up_test_dir && node src/main.js",
+    "set_up_test_dir": "rm -rf testdir && cp -r testdir_template testdir",
+    "dev": "nodemon -e js --watch src --exec \"yarn run start\"",
     "lint": "eslint src/**/*.js"
   },
   "version": "1.0.0",
@@ -16,5 +16,7 @@
     "eslint": "^8.38.0",
     "nodemon": "^2.0.22"
   },
-  "dependencies": {}
+  "dependencies": {
+    "blessed": "^0.1.81"
+  }
 }

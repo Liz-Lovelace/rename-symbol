@@ -1,148 +1,162 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import path from 'path';
-import fs from 'fs';
+import { pathsWithMatches } from './ripgrep.js';
+import { readFiles } from './fs_utils.js';
+import { replaceSubstringsWithIndexes } from './replaceSubstringsWithIndexes.js';
+import { showDiff, trimToContext } from './string_formatters.js';
+import blessed from 'blessed';
 
-const execFileAsync = promisify(execFile);
-
-async function main(a, b) {
-  let files = await allMatchingFiles(a, './testdir');
+async function getData(a, b) {
+  let filePaths = await pathsWithMatches(a, './testdir');
+  let files = await readFiles(filePaths);
+  let fileStates = [];
   for (let file of files) {
-    //let indexes = file.matches.map(match => match.index);
-    let indexes = [0, 2, 3];
-    const result = replaceOccurences(a, b, file.fileContents, indexes);
-    file = {
+    let excludeIndexes = [0, 2, 3];
+    //let excludeIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    //let excludeIndexes = [];
+    const result = replaceSubstringsWithIndexes(a, b, file.fileContents, excludeIndexes);
+    for (let i = 0; i < result.replacements.length; i++) {
+      result.replacements[i].diff = showDiff(
+        result.replacements[i].oldSubstring,
+        result.replacements[i].newSubstring,
+        result.newContents,
+        result.replacements[i].position,
+        result.replacements[i].applied
+      );
+      result.replacements[i].diff = trimToContext(
+        result.replacements[i].diff, 
+        result.replacements[i].position,
+        2
+      )
+    }
+    fileStates.push({
       ...file,
       ...result,
-    };
-    console.log(file);
-  }
-}
-
-main('aa', 'bbb');
-
-// Wrapper function to search for a string in a directory using ripgrep
-async function pathsWithMatches(searchString, directoryPath) {
-  const resolvedPath = path.resolve(directoryPath);
-  
-  let stdout;
-  try {
-    const result = await execFileAsync('rg',
-      [
-        '-i',
-        '-l',
-        searchString,
-        resolvedPath,
-      ]);
-    stdout = result.stdout;
-  } catch (err) {
-    if (err.code === 1)
-      return [];
-    else
-      throw err;
-  }
-  
-  return stdout
-    .split('\n')
-    .filter(Boolean);
-}
-
-function indexMatchesInString(searchString, fileContents) {
-  const regex = new RegExp(searchString, 'gi');
-  let match;
-  const matches = [];
-
-  while ((match = regex.exec(fileContents)) !== null) {
-    matches.push({
-      match: match[0],
-      position: match.index,
-      index: matches.length,
-    });
-
-    // Break the loop if the regex position doesn't advance
-    if (regex.lastIndex === match.index) {
-      regex.lastIndex++;
-    }
-  }
-
-  return matches;
-}
-
-async function allMatchingFiles(searchString, directoryPath) {
-  const filePaths = await pathsWithMatches(searchString, directoryPath);
-
-  const indexedFiles = [];
-  for (const filePath of filePaths) {
-    const fileContents = await fs.promises.readFile(filePath, 'utf-8');
-    const matches = await indexMatchesInString(searchString, fileContents);
-    indexedFiles.push({
-      filePath: filePath,
-      fileContents,
-      matches: matches,
     });
   }
-
-  return indexedFiles;
+  return fileStates;
 }
 
-function replaceOccurences(oldSubstring, newSubstring, oldString, indexes) {
-  const regex = new RegExp(oldSubstring, 'gi');
-  let match;
-  const matches = [];
-  let replacements = [];
+let fileStates = await getData('newSubstringRegex', 'oldRegex');
 
-  while ((match = regex.exec(oldString)) !== null) {
-    matches.push({
-      match: match[0],
-      position: match.index,
-      index: matches.length,
-    });
+// Create a blessed screen object.
+const screen = blessed.screen({
+  smartCSR: true,
+  debug: true,
+  autoPadding: true,
+});
 
-    // Break the loop if the regex position doesn't advance
-    if (regex.lastIndex === match.index) {
-      regex.lastIndex++;
-    }
+function calculateTop(index, boxes) {
+  let top = 0; // Start from position 1 to account for the title.
+  for (let i = 0; i < index; i++) {
+    top += boxes[i].height; // Add the height of the previous box plus 1 for spacing.
   }
+  return top;
+}
 
-  let newContents = oldString;
+const biggestBox = blessed.box({
+  //top: 0,
+  scrollable: true,
+  alwaysScroll: true,
+  padding: 0,
+  left: 0,
+  width: '100%',
+  height: '100%',
+  border: {
+    type: 'line'
+  },
+  style: {
+    fg: 'white',
+    bg: 'black',
+    border: {
+      fg: 'red',
+    },
+  },
+  label: ` main `,
+});
 
-  for (const index of indexes.reverse()) {
-    const match = matches[index];
-    if (match) {
-      const oldLength = match.match.length;
-      const newLength = newSubstring.length;
+let fileBoxes = [];
 
-      const newPosition = match.position;
+fileStates.forEach((file, fileIndex) => {
+  const fileBox = blessed.box({
+    top: calculateTop(fileIndex, fileBoxes),
+    padding: 1,
+    left: 0,
+    width: '100%',
+    scrollable: true,
+    //alwaysScroll: true,
+    height: '100%',
+    border: {
+      type: 'line'
+    },
+    style: {
+      fg: 'white',
+      bg: 'black',
+      border: {
+        fg: 'cyan',
+      },
+    },
+    label: ` ${file.filePath} `,
+  });
 
-      newContents = newContents.slice(0, newPosition) +
-        newSubstring +
-        newContents.slice(newPosition + oldLength);
-
-      // Update the positions of the remaining matches
-      for (let i = index + 1; i < matches.length; i++) {
-        matches[i].position += newLength - oldLength;
+  let diffBoxes = []
+  // Iterate over the replacements for the current file
+  file.replacements.forEach((replacement, index) => {
+    const diff = replacement.diff;
+    
+    const diffBox = blessed.box({
+      top: calculateTop(index, diffBoxes),
+      left: 1,
+      width: '100%',
+      scrollable: true,
+      height: diff.split('\n').length + 2,
+      border: {
+        type: replacement.applied ? 'line' : 'bg',
+        ch: '.'
+      },
+      style: {
+        fg: 'white',
+        bg: 'black',
+        border: {
+          fg: replacement.applied ? 'green' : 'white',
+        },
       }
-    }
-  }
-
-  // Find the positions of the new substring in the new contents
-  const newSubstringRegex = new RegExp(newSubstring, 'gi');
-  
-  while ((match = newSubstringRegex.exec(newContents)) !== null) {
-    replacements.push({
-      replacement: newSubstring,
-      position: match.index,
-      index: indexes.reverse()[replacements.length],
     });
 
-    // Break the loop if the regex position doesn't advance
-    if (newSubstringRegex.lastIndex === match.index) {
-      newSubstringRegex.lastIndex++;
-    }
-  }
+    const line = blessed.text({
+    top: 0,
+    left: 2,
+    width: '100%',
+    tags: true,
+    style: {
+      fg: 'white',
+      bg: 'black'
+    },
+    content: `${diff}`
+    });
+    
+    diffBox.append(line);
+    fileBox.append(diffBox);
+    diffBoxes.push(diffBox)
+  });
 
-  return {
-    newContents,
-    replacements,
-  };
-}
+  fileBox.height = diffBoxes.reduce((acc, elem) => acc + elem.height + 1, 0);
+
+  fileBoxes.push(fileBox);
+  biggestBox.append(fileBox);
+});
+
+screen.append(biggestBox)
+
+screen.key(['escape', 'q', 'C-c'], () => {
+  return process.exit(0);
+});
+
+screen.key(['k'], () => {
+  biggestBox.scroll(1)
+  //fileBoxes.forEach(fb => fb.scroll(-1))
+});
+
+screen.key(['l'], () => {
+  biggestBox.scroll(-1)
+});
+
+screen.render();
