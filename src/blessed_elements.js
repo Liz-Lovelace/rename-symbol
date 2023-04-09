@@ -7,7 +7,7 @@ export const appContainerDefaults = {
   width: '100%',
   height: '100%',
   border: {
-    type: 'line'
+    type: 'bg'
   },
   style: {
     border: {
@@ -19,15 +19,16 @@ export const appContainerDefaults = {
 export const fileBoxDefaults = {
   padding: 1,
   left: 0,
-  width: '100%',
+  width: '100%-2',
   scrollable: true,
   height: '100%',
+  tags: true,
   border: {
     type: 'line'
   },
   style: {
     border: {
-      fg: 'cyan',
+      fg: 'blue',
     },
   },
 }
@@ -35,7 +36,7 @@ export const fileBoxDefaults = {
 export const diffBoxDefaults = {
   left: 8,
   tags: true,
-  width: '100%',
+  width: '100%-11',
   scrollable: true,
 }
 

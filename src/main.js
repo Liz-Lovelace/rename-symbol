@@ -1,14 +1,19 @@
 import { pathsWithMatches } from './ripgrep.js';
 import { readFiles } from './fs_utils.js';
 import { replaceSubstringsWithIndexes } from './replaceSubstringsWithIndexes.js';
-import { showDiff, trimToContext } from './string_formatters.js';
+import { showDiff, trimToContext, stylePath} from './string_formatters.js';
 import { appContainerDefaults, fileBoxDefaults, diffBoxDefaults, diffTextDefaults } from './blessed_elements.js';
 import blessed from 'blessed';
 import { applySubstitutions } from './applySubstitutions.js';
 
-let [a, b] = ['best', 'test'];
+let [a, b] = ['a', 'b'];
 
 let files = await readFiles(await pathsWithMatches(a, './testdir'));
+if (files.length == 0) {
+  console.log('no matches found for string "', a, '"')
+  process.exit()
+}
+
 
 async function getData(a, b, files) {
   let fileStates = [];
@@ -69,10 +74,11 @@ function renderUI(fileStates, UIState){
   let fileBoxes = [];
 
   fileStates.forEach((file, fileIndex) => {
+    
     const fileBox = blessed.box({
       ...fileBoxDefaults,
       top: calculateTop(fileIndex, fileBoxes),
-      label: ` ${file.filePath} `,
+      label: stylePath(file.filePath),
     });
 
     let diffBoxes = []

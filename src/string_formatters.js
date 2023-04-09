@@ -3,6 +3,18 @@ function tag(tag, inner){
   return `{${tag}}${inner}{/${tag}}`;
 }
 
+export function stylePath(path, pathStyle, fileNameStyle) {
+  const parts = path.split('/');
+  const fileName = parts.pop();
+  const directoryPath = parts.join('/');
+
+  const styledPath = tag('blue-fg', directoryPath + '/');
+  const styledFileName = tag('cyan-fg;bold', fileName);
+
+  return ` ${styledPath}${styledFileName} `;
+}
+
+
 export function showDiff(a, b, newString, position, active) {
   if (position < 0 || position + b.length > newString.length) {
     throw new Error('Invalid position provided');
