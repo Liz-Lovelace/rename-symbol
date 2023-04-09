@@ -13,14 +13,17 @@ export function showDiff(a, b, newString, position, active) {
     newString.slice(position + b.length) :
     newString.slice(position + a.length);
   
-  let aWrapper = active ? 'red-fg' : 'inverse';
+  let aWrapper = 'red-fg';
   let arrowWrapper = 'red-fg';
   let bWrapper = 'green-fg';
   if (!active){
     b = '';
+  } else {
+    a = '';
   }
-  let arrow = active ? '->' : ''
-  
+    
+  //let arrow = active ? '->' : ''
+  let arrow = '';
   return `${prefix}${tag(aWrapper, a)}${arrow}${tag(bWrapper, b)}${suffix}`;
 }
 

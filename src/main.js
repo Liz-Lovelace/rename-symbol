@@ -2,17 +2,19 @@ import { pathsWithMatches } from './ripgrep.js';
 import { readFiles } from './fs_utils.js';
 import { replaceSubstringsWithIndexes } from './replaceSubstringsWithIndexes.js';
 import { showDiff, trimToContext } from './string_formatters.js';
+import { appContainerDefaults, fileBoxDefaults, diffBoxDefaults, diffTextDefaults } from './blessed_elements.js';
 import blessed from 'blessed';
+import { applySubstitutions } from './applySubstitutions.js';
 
-async function getData(a, b) {
-  let filePaths = await pathsWithMatches(a, './testdir');
-  let files = await readFiles(filePaths);
+let [a, b] = ['best', 'test'];
+
+let files = await readFiles(await pathsWithMatches(a, './testdir'));
+
+async function getData(a, b, files) {
   let fileStates = [];
+  let diffIndex = 0;
   for (let file of files) {
-    let excludeIndexes = [0, 2, 3];
-    //let excludeIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-    //let excludeIndexes = [];
-    const result = replaceSubstringsWithIndexes(a, b, file.fileContents, excludeIndexes);
+    const result = replaceSubstringsWithIndexes(a, b, file.fileContents, file.excludedIndexes);
     for (let i = 0; i < result.replacements.length; i++) {
       result.replacements[i].diff = showDiff(
         result.replacements[i].oldSubstring,
@@ -24,8 +26,9 @@ async function getData(a, b) {
       result.replacements[i].diff = trimToContext(
         result.replacements[i].diff, 
         result.replacements[i].position,
-        2
+        1
       )
+      result.replacements[i].diffIndex = diffIndex++;
     }
     fileStates.push({
       ...file,
@@ -35,14 +38,19 @@ async function getData(a, b) {
   return fileStates;
 }
 
-let fileStates = await getData('newSubstringRegex', 'oldRegex');
+let fileStates = await getData(a, b, files);
+let UIState = {
+  focusedDiff: 3,
+  scroll: 0,
+}
 
-// Create a blessed screen object.
-const screen = blessed.screen({
+let screen = blessed.screen({
   smartCSR: true,
   debug: true,
   autoPadding: true,
 });
+
+renderUI(fileStates, UIState)
 
 function calculateTop(index, boxes) {
   let top = 0; // Start from position 1 to account for the title.
@@ -52,111 +60,118 @@ function calculateTop(index, boxes) {
   return top;
 }
 
-const biggestBox = blessed.box({
-  //top: 0,
-  scrollable: true,
-  alwaysScroll: true,
-  padding: 0,
-  left: 0,
-  width: '100%',
-  height: '100%',
-  border: {
-    type: 'line'
-  },
-  style: {
-    fg: 'white',
-    bg: 'black',
-    border: {
-      fg: 'red',
-    },
-  },
-  label: ` main `,
-});
-
-let fileBoxes = [];
-
-fileStates.forEach((file, fileIndex) => {
-  const fileBox = blessed.box({
-    top: calculateTop(fileIndex, fileBoxes),
-    padding: 1,
-    left: 0,
-    width: '100%',
-    scrollable: true,
-    //alwaysScroll: true,
-    height: '100%',
-    border: {
-      type: 'line'
-    },
-    style: {
-      fg: 'white',
-      bg: 'black',
-      border: {
-        fg: 'cyan',
-      },
-    },
-    label: ` ${file.filePath} `,
+function renderUI(fileStates, UIState){
+  const appContainer = blessed.box({
+    ...appContainerDefaults,
+    label: `{red-fg}${a}{/red-fg}->{green-fg}${b}{/green-fg}`,
   });
 
-  let diffBoxes = []
-  // Iterate over the replacements for the current file
-  file.replacements.forEach((replacement, index) => {
-    const diff = replacement.diff;
-    
-    const diffBox = blessed.box({
-      top: calculateTop(index, diffBoxes),
-      left: 1,
-      width: '100%',
-      scrollable: true,
-      height: diff.split('\n').length + 2,
-      border: {
-        type: replacement.applied ? 'line' : 'bg',
-        ch: '.'
-      },
-      style: {
-        fg: 'white',
-        bg: 'black',
+  let fileBoxes = [];
+
+  fileStates.forEach((file, fileIndex) => {
+    const fileBox = blessed.box({
+      ...fileBoxDefaults,
+      top: calculateTop(fileIndex, fileBoxes),
+      label: ` ${file.filePath} `,
+    });
+
+    let diffBoxes = []
+    // Iterate over the replacements for the current file
+    file.replacements.forEach((replacement, index) => {
+      let isFocused = replacement.diffIndex === UIState.focusedDiff;
+
+      let height = replacement.diff.split('\n').length + 4
+      
+      const diffBox = blessed.box({
+        ...diffBoxDefaults,
+        top: calculateTop(index, diffBoxes),
+        height,
         border: {
-          fg: replacement.applied ? 'green' : 'white',
+          type: 'line',
         },
+        label: replacement.applied ? '{green-fg;bold}APPLY{/green-fg;bold}' : 'skip',
+        style: {
+          border: {
+            fg: replacement.applied ? 'green' : 'white',
+          },
+        }
+      });
+      
+      const checkBox = blessed.box({
+        top: calculateTop(index, diffBoxes),
+        left: 1,
+        scrollable: true,
+        height,
+        width: 6,
+        ch: replacement.applied ? '>' : '.',
+        style: {
+          fg: replacement.applied ? 'green' : 'white',
+          inverse: isFocused,
+        },
+      })
+
+      const diffText = blessed.text({
+        ...diffTextDefaults,
+        content: replacement.diff,
+        //style: {
+        //  bold: isFocused,
+        //},
+      });
+      if (isFocused){
+        UIState.focusedFile = file;
+        UIState.focusedLocalDiff = replacement.index;
+        UIState.focusedDiffElem = diffBox;
       }
+      
+      diffBox.append(diffText);
+      fileBox.append(diffBox);
+      fileBox.append(checkBox);
+      diffBoxes.push(diffBox)
+
     });
 
-    const line = blessed.text({
-    top: 0,
-    left: 2,
-    width: '100%',
-    tags: true,
-    style: {
-      fg: 'white',
-      bg: 'black'
-    },
-    content: `${diff}`
-    });
-    
-    diffBox.append(line);
-    fileBox.append(diffBox);
-    diffBoxes.push(diffBox)
+    fileBox.height = diffBoxes.reduce((acc, elem) => acc + elem.height + 1, 0);
+
+    fileBoxes.push(fileBox);
+    appContainer.append(fileBox);
   });
 
-  fileBox.height = diffBoxes.reduce((acc, elem) => acc + elem.height + 1, 0);
 
-  fileBoxes.push(fileBox);
-  biggestBox.append(fileBox);
-});
+  screen.append(appContainer)
+  appContainer.setScroll(UIState.scroll)
 
-screen.append(biggestBox)
+  screen.render();
+  appContainer.setScroll(UIState.focusedDiffElem.atop - 10);
+  screen.children.forEach(child => child.destroy())
+}
 
 screen.key(['escape', 'q', 'C-c'], () => {
   return process.exit(0);
 });
 
 screen.key(['k'], () => {
-  biggestBox.scroll(1)
-  //fileBoxes.forEach(fb => fb.scroll(-1))
+  UIState.focusedDiff += 1;
+  renderUI(fileStates, UIState);
 });
 
 screen.key(['l'], () => {
-  biggestBox.scroll(-1)
+  UIState.focusedDiff -= 1;
+  renderUI(fileStates, UIState)
 });
 
-screen.render();
+screen.key(['j', ';', 'space'], async () => {
+  UIState.focusedDiff
+  let file = fileStates.find(file => file === UIState.focusedFile)
+  let index = file.excludedIndexes.indexOf(UIState.focusedLocalDiff);
+  if (index !== -1)
+    file.excludedIndexes.splice(index, 1)
+  else
+    file.excludedIndexes.push(UIState.focusedLocalDiff)
+  fileStates = await getData(a, b, fileStates);
+  renderUI(fileStates, UIState)
+});
+
+screen.key(['enter'], async () => {
+  await applySubstitutions(fileStates)
+  process.exit(0);
+});
