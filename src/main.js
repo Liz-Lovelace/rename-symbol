@@ -155,18 +155,17 @@ screen.key(['escape', 'q', 'C-c'], () => {
   return process.exit(0);
 });
 
-screen.key(['k'], () => {
+screen.key(['j'], () => {
   UIState.focusedDiff += 1;
   renderUI(fileStates, UIState);
 });
 
-screen.key(['l'], () => {
+screen.key(['k'], () => {
   UIState.focusedDiff -= 1;
   renderUI(fileStates, UIState)
 });
 
-screen.key(['j', ';', 'space'], async () => {
-  UIState.focusedDiff
+screen.key(['h', 'l', 'space'], async () => {
   let file = fileStates.find(file => file === UIState.focusedFile)
   let index = file.excludedIndexes.indexOf(UIState.focusedLocalDiff);
   if (index !== -1)
